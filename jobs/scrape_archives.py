@@ -13,7 +13,8 @@ from kinto_http import cli_utils
 
 
 ARCHIVE_URL = "https://archive.mozilla.org/pub/"
-PRODUCTS = ("firefox", "thunderbird")
+PRODUCTS = ("fennec", "firefox", "thunderbird")
+FILE_EXTENSIONS = "zip|gz|bz|bz2|dmg|apk"
 DEFAULT_SERVER = "https://kinto-ota.dev.mozaws.net/v1"
 DEFAULT_BUCKET = "build-hub"
 DEFAULT_COLLECTION = "archives"
@@ -75,7 +76,7 @@ def archive(product, version, platform, locale, channel, url, size, date, metada
 
 
 def archive_url(product, version=None, platform=None, locale=None, nightly=None):
-    url = ARCHIVE_URL + product
+    url = ARCHIVE_URL + (product if product != "fennec" else "mobile")
     if nightly:
         url += "/nightly/" + nightly + "/"
     else:
@@ -113,8 +114,12 @@ async def fetch_listing(session, url):
 async def fetch_nightly_metadata(session, nightly_url):
     """A JSON file containing build info is published along the nightly archive.
     """
+    # XXX: It is only available for en-US though. Should we use the same for every locale?
+    if "en-US" not in nightly_url:
+        return None
+
     try:
-        metadata_url = nightly_url.replace(".tar.bz2", ".json")
+        metadata_url = re.sub("\.({})$".format(FILE_EXTENSIONS), ".json", nightly_url)
         metadata = await fetch_json(session, metadata_url)
         return metadata
     except aiohttp.ClientError:
@@ -128,7 +133,9 @@ async def fetch_release_metadata(session, product, version, platform, locale):
     if locale != "en-US":
         return None
 
-    url = "{}{}/candidates/{}-candidates/".format(ARCHIVE_URL, product, version)
+    product_url = product if product != "fennec" else "mobile"
+
+    url = "{}{}/candidates/{}-candidates/".format(ARCHIVE_URL, product_url, version)
     try:
         build_folders, _ = await fetch_listing(session, url)
         latest_build_folder = sorted(build_folders)[-1]
@@ -136,8 +143,8 @@ async def fetch_release_metadata(session, product, version, platform, locale):
         url += "{}{}/{}/".format(latest_build_folder, platform, locale)
         _, files = await fetch_listing(session, url)
 
-        metadata_file = "{}-{}.json".format(product, version)
-        json_file = [f_["name"] for f_ in files if f_["name"].endswith(metadata_file)][0]
+        re_metadata = re.compile("{}-{}(.*).json".format(product, version))
+        json_file = [f_["name"] for f_ in files if re_metadata.match(f_["name"])][0]
         url += json_file
         metadata = await fetch_json(session, url)
 
@@ -178,22 +185,24 @@ async def fetch_nightlies(session, queue, product, client):
 
     # Skip aurora nightlies and known nightlies...
     days_urls = [archive_url(product, nightly=current_month + "/" + f[:-1])
-                 for f in days_folders if f > latest_nightly_folder and f.endswith("mozilla-central/")]
+                 for f in days_folders if f > latest_nightly_folder]
+    days_urls = [url for url in days_urls if "mozilla-central" in url]
+
     futures = [fetch_listing(session, day_url) for day_url in days_urls]
     listings = await asyncio.gather(*futures)
 
     channel = "nightly"
+    re_filename = re.compile(r"\w+-(\d+.+)\.([a-z]+(\-[A-Z]+)?)\.(.+)\.({})$".format(FILE_EXTENSIONS))
 
     for day_url, (_, files) in zip(days_urls, listings):
-        futures = []
         for file_ in files:
             filename = file_["name"]
             size = file_["size"]
             date = file_["last_modified"]
             url = day_url + filename
 
-            match = re.search(r'\w+-(\d+.+)\.([a-z]+(\-[A-Z]+)?)\.(.+)\.tar.bz2+$', filename)
-            if not match:
+            match = re_filename.search(filename)
+            if not match or "tests" in filename:
                 continue
             version = match.group(1)
             locale = match.group(2)
@@ -201,10 +210,8 @@ async def fetch_nightlies(session, queue, product, client):
 
             metadata = await fetch_nightly_metadata(session, url)
             record = archive(product, version, platform, locale, channel, url, size, date, metadata)
-            logger.debug("Nightly found %s" % url)
-
-            futures.append(queue.put(record))
-        await asyncio.gather(*futures)
+            logger.debug("Nightly found {}".format(url))
+            await queue.put(record)
 
 
 async def fetch_versions(session, queue, product, client):
@@ -264,8 +271,8 @@ async def fetch_files(session, queue, product, version, platform, locale):
     locale_url = archive_url(product, version, platform, locale)
     _, files = await fetch_listing(session, locale_url)
 
-    fileregexp = re.compile("%s-(.+)(zip|gz|bz|bz2|dmg|apk)$" % product)
-    files = [f for f in files if fileregexp.match(f["name"]) and 'sdk' not in f["name"]]
+    re_filename = re.compile("{}-(.+)({})$".format(product, FILE_EXTENSIONS))
+    files = [f for f in files if re_filename.match(f["name"]) and 'sdk' not in f["name"]]
 
     channel = None  # Unknown.
 
