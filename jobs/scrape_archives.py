@@ -30,7 +30,7 @@ def publish_records(client, records):
     with client.batch() as batch:
         for record in records:
             batch.create_record(record)
-    logger.info("Created %s records" % len(records))
+    logger.info("Created {} records".format(len(records)))
 
 
 def archive(product, version, platform, locale, channel, url, size, date, metadata=None):
@@ -107,7 +107,7 @@ async def fetch_listing(session, url):
         data = await fetch_json(session, url)
         return data["prefixes"], data["files"]
     except (aiohttp.ClientError, KeyError, ValueError) as e:
-        raise ValueError("Could not fetch %s: %s" % (url, e))
+        raise ValueError("Could not fetch {}: {}".format(url, e))
 
 
 async def fetch_nightly_metadata(session, nightly_url):
@@ -278,7 +278,7 @@ async def fetch_files(session, queue, product, version, platform, locale):
 
         metadata = await fetch_release_metadata(session, product, version, platform, locale)
         record = archive(product, version, platform, locale, channel, url, size, date, metadata)
-        logger.debug("Release found %s" % record["download"]["url"])
+        logger.debug("Release found {}".format(url))
 
         futures.append(queue.put(record))
 
