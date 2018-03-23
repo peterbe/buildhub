@@ -192,6 +192,45 @@ class ProjectInfo extends React.PureComponent {
   }
 }
 
+const sortVersions = filters => {
+  return filters.sort((a, b) => {
+    const partsA = a.key.split(".");
+    const partsB = b.key.split(".");
+    if (partsA.length < 2 || partsB.length < 2) {
+      // Bogus version, list is last.
+      return 1;
+    }
+    let i = 0;
+    while (partsA[i] === partsB[i] && i <= partsA.length) {
+      // Skip all the parts that are equal.
+      i++;
+    }
+    if (!partsA[i] || !partsB[i]) {
+      // Both versions have the same parts, but one has more parts, eg 56.0 and 56.0.1.
+      return partsB.length - partsA.length;
+    }
+    const subPartRegex = /^(\d+)([a-zA-Z]+)?(\d+)?([a-zA-Z]+)?/; // Eg: 0b12pre
+    const subPartA = partsA[i].match(subPartRegex); // Eg: ["0b1pre", "0", "b", "12", "pre"]
+    const subPartB = partsB[i].match(subPartRegex);
+    if (subPartA[1] !== subPartB[1]) {
+      return parseInt(subPartB[1], 10) - parseInt(subPartA[1], 10);
+    }
+    if (subPartA[2] !== subPartB[2]) {
+      if (subPartA[2] && !subPartB[2]) {
+        return 1;
+      }
+      if (subPartB[2] && !subPartA[2]) {
+        return -1;
+      }
+      return subPartB[2].localeCompare(subPartA[2]);
+    }
+    if (subPartA[3] !== subPartB[3]) {
+      return parseInt(subPartB[3], 10) - parseInt(subPartA[3], 10);
+    }
+    return parseInt(partsB[2], 10) - parseInt(partsA[2], 10);
+  });
+};
+
 class App extends Component {
   render() {
     return (
@@ -240,29 +279,35 @@ class App extends Component {
                   title="Version"
                   git
                   id="versions"
-                  size={20}
+                  size={1000}
                   operator="OR"
                   multi={true}
+                  orderKey={"_term"}
+                  orderDirection={"desc"}
+                  bucketsTransform={sortVersions}
                 />
                 <RefinementAutosuggest
                   field="target.platform"
                   title="Platform"
                   id="platform"
-                  size={20}
+                  size={1000}
+                  orderKey="_term"
                   multi={true}
                 />
                 <RefinementAutosuggest
                   field="target.channel"
                   title="Channel"
                   id="channel"
-                  size={20}
+                  size={1000}
+                  orderKey="_term"
                   multi={true}
                 />
                 <RefinementAutosuggest
                   field="target.locale"
                   title="Locale"
                   id="locale"
-                  size={20}
+                  size={1000}
+                  orderKey="_term"
                   multi={true}
                 />
               </SideBar>
