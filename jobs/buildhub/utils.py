@@ -9,11 +9,6 @@ import re
 
 from decouple import config
 
-from buildhub.configure_markus import get_metrics
-
-
-metrics = get_metrics('buildhub')
-
 
 ALL_PRODUCTS = ('firefox', 'thunderbird', 'mobile', 'devedition')
 ARCHIVE_URL = config('ARCHIVE_URL', 'https://archive.mozilla.org/')
@@ -170,7 +165,6 @@ _build_url_exclude_suffixes_regex = re.compile(
 )
 
 
-@metrics.timer_decorator('is_build_url')
 def is_build_url(product, url):
     """
     - firefox/nightly/experimental/sparc-633408-fix/
