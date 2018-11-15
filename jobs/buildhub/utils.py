@@ -9,6 +9,11 @@ import re
 
 from decouple import config
 
+from buildhub.configure_markus import get_metrics
+
+
+metrics = get_metrics('buildhub')
+
 
 ALL_PRODUCTS = ('firefox', 'thunderbird', 'mobile', 'devedition')
 ARCHIVE_URL = config('ARCHIVE_URL', 'https://archive.mozilla.org/')
@@ -150,6 +155,22 @@ def build_record_id(record):
     return id_.replace('.', '-').lower()
 
 
+# Compile these regexes once per module to speed up their use inside
+# the is_build_url() function.
+
+_build_url_exclude_names_regex = re.compile(
+    '.+(tinderbox|try-builds|partner-repacks|latest|contrib|/0\.|'
+    'experimental|namoroka|debug|sha1-installers|candidates/archived|'
+    'stylo-bindings|/1.0rc/|/releases/win../|dominspector|/test/|testing|'
+    '%28.+%29|\sInstaller\.(\w{2,3}\-?\w{0,3})\.exe)'
+)
+
+_build_url_exclude_suffixes_regex = re.compile(
+    '.+(sdk|tests|crashreporter|stub|gtk2.+xft|source|asan)'
+)
+
+
+@metrics.timer_decorator('is_build_url')
 def is_build_url(product, url):
     """
     - firefox/nightly/experimental/sparc-633408-fix/
@@ -177,13 +198,7 @@ def is_build_url(product, url):
     ):
         return False
 
-    re_exclude = re.compile(
-        '.+(tinderbox|try-builds|partner-repacks|latest|contrib|/0\.|'
-        'experimental|namoroka|debug|sha1-installers|candidates/archived|'
-        'stylo-bindings|/1.0rc/|/releases/win../|dominspector|/test/|testing|'
-        '%28.+%29|\sInstaller\.(\w{2,3}\-?\w{0,3})\.exe)'
-    )
-    if re_exclude.match(url):
+    if _build_url_exclude_names_regex.match(url):
         return False
 
     # Only .exe for Windows.
@@ -200,9 +215,7 @@ def is_build_url(product, url):
     re_filename = re.compile(
         '{}-(.+)({})$'.format(product, '|'.join(extensions))
     )
-    re_exclude = re.compile(
-        '.+(sdk|tests|crashreporter|stub|gtk2.+xft|source|asan)'
-    )
+    re_exclude = _build_url_exclude_suffixes_regex
     return (
         re_filename.match(match_filename) and
         not re_exclude.match(match_filename)
