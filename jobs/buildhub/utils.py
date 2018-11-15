@@ -201,10 +201,10 @@ def is_build_url(product, url):
     if _build_url_exclude_names_regex.match(url):
         return False
 
+    extensions = FILE_EXTENSIONS
     # Only .exe for Windows.
-    extensions = list(FILE_EXTENSIONS)
     if 'win' in url:
-        extensions.remove('zip')
+        extensions = [x for x in extensions if x != 'zip']
 
     if product == 'devedition':
         product = 'firefox'
@@ -212,14 +212,13 @@ def is_build_url(product, url):
         product = 'fennec'
     filename = os.path.basename(url)
     match_filename = filename.replace(' ', '-').lower()
+    if _build_url_exclude_suffixes_regex.match(match_filename):
+        return False
+
     re_filename = re.compile(
         '{}-(.+)({})$'.format(product, '|'.join(extensions))
     )
-    re_exclude = _build_url_exclude_suffixes_regex
-    return (
-        re_filename.match(match_filename) and
-        not re_exclude.match(match_filename)
-    )
+    return re_filename.match(match_filename)
 
 
 def is_release_build_metadata(product, version, filename):
